@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,124 +19,185 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Plus, Search, Car, User, Edit, Trash2, Calendar } from "lucide-react";
+import { Plus, Search, Car, User, Edit, Trash2, Calendar, RefreshCcw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { api } from "@/Service/api";
+import { useAuth } from "@/hooks/useAuth";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface Veiculo {
   id: number;
   placa: string;
-  modelo: string;
-  marca: string;
+  idmodelo: number;
+  modelo?: { id: number; modelo: string; marca: { id: number; marca: string } };
+  idcliente: number;
+  cliente?: { id: number; nome: string };
+  iduser: number;
+  user?: { id: number; name: string };
   ano: number;
   cor: string;
-  cliente: string;
   km: number;
+  ativo: number;
 }
 
-const veiculosData: Veiculo[] = [
-  {
-    id: 1,
-    placa: "ABC-1234",
-    modelo: "Civic",
-    marca: "Honda",
-    ano: 2020,
-    cor: "Prata",
-    cliente: "João Silva",
-    km: 45000,
-  },
-  {
-    id: 2,
-    placa: "DEF-5678",
-    modelo: "Corolla",
-    marca: "Toyota",
-    ano: 2019,
-    cor: "Branco",
-    cliente: "Maria Santos",
-    km: 62000,
-  },
-  {
-    id: 3,
-    placa: "GHI-9012",
-    modelo: "Golf",
-    marca: "Volkswagen",
-    ano: 2021,
-    cor: "Preto",
-    cliente: "Pedro Oliveira",
-    km: 28000,
-  },
-  {
-    id: 4,
-    placa: "JKL-3456",
-    modelo: "Argo",
-    marca: "Fiat",
-    ano: 2022,
-    cor: "Vermelho",
-    cliente: "Ana Costa",
-    km: 15000,
-  },
-];
+interface Cliente {
+  id: number;
+  nome: string;
+}
+
+interface Modelo {
+  id: number;
+  modelo: string;
+  marca: { id: number; marca: string };
+}
 
 const Veiculos = () => {
-  const [veiculos, setVeiculos] = useState<Veiculo[]>(veiculosData);
+  const [veiculos, setVeiculos] = useState<Veiculo[]>([]);
+  const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [modelos, setModelos] = useState<Modelo[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [isOpen, setIsOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
   const { toast } = useToast();
+  const { user } = useAuth();
 
-  const [novoVeiculo, setNovoVeiculo] = useState({
+  const [formData, setFormData] = useState({
     placa: "",
-    modelo: "",
-    marca: "",
+    idmodelo: "",
+    idcliente: "",
     ano: "",
     cor: "",
-    cliente: "",
     km: "",
+    ativo: 1,
   });
+
+  const [currentVeiculo, setCurrentVeiculo] = useState<Veiculo | null>(null);
+
+  const fetchData = async () => {
+    try {
+      const [veiculosData, clientesData, modelosData] = await Promise.all([
+        api.get("/veiculos"),
+        api.get("/clientes"),
+        api.get("/modelos"),
+      ]);
+      setVeiculos(veiculosData);
+      setClientes(clientesData);
+      setModelos(modelosData);
+    } catch (error) {
+      toast({
+        title: "Erro",
+        description: "Erro ao carregar dados.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
 
   const filteredVeiculos = veiculos.filter(
     (veiculo) =>
-      veiculo.placa.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      veiculo.modelo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      veiculo.cliente.toLowerCase().includes(searchTerm.toLowerCase())
+      veiculo.placa?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      veiculo.modelo?.modelo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      veiculo.cliente?.nome.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleAddVeiculo = () => {
-    if (!novoVeiculo.placa || !novoVeiculo.modelo) {
+  const resetForm = () => {
+    setFormData({
+      placa: "",
+      idmodelo: "",
+      idcliente: "",
+      ano: "",
+      cor: "",
+      km: "",
+      ativo: 1,
+    });
+    setCurrentVeiculo(null);
+  };
+
+  const handleAddVeiculo = async () => {
+    if (!formData.placa || !formData.idmodelo || !formData.idcliente) {
       toast({
         title: "Erro",
-        description: "Preencha pelo menos placa e modelo",
+        description: "Preencha placa, modelo e cliente.",
         variant: "destructive",
       });
       return;
     }
 
-    const newVeiculo: Veiculo = {
-      id: veiculos.length + 1,
-      placa: novoVeiculo.placa,
-      modelo: novoVeiculo.modelo,
-      marca: novoVeiculo.marca,
-      ano: parseInt(novoVeiculo.ano) || new Date().getFullYear(),
-      cor: novoVeiculo.cor,
-      cliente: novoVeiculo.cliente,
-      km: parseInt(novoVeiculo.km) || 0,
-    };
-
-    setVeiculos([...veiculos, newVeiculo]);
-    setNovoVeiculo({
-      placa: "",
-      modelo: "",
-      marca: "",
-      ano: "",
-      cor: "",
-      cliente: "",
-      km: "",
-    });
-    setIsOpen(false);
-
-    toast({
-      title: "Veículo adicionado",
-      description: `${newVeiculo.marca} ${newVeiculo.modelo} foi adicionado com sucesso!`,
-    });
+    try {
+      const payload = {
+        ...formData,
+        iduser: user?.id,
+      };
+      await api.post("/veiculos", payload);
+      fetchData();
+      setIsOpen(false);
+      resetForm();
+      toast({
+        title: "Sucesso",
+        description: "Veículo adicionado com sucesso!",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Erro",
+        description: error.message || "Erro ao adicionar veículo.",
+        variant: "destructive",
+      });
+    }
   };
+
+  const handleEditClick = (veiculo: Veiculo) => {
+    setCurrentVeiculo(veiculo);
+    setFormData({
+      placa: veiculo.placa,
+      idmodelo: veiculo.idmodelo.toString(),
+      idcliente: veiculo.idcliente.toString(),
+      ano: veiculo.ano?.toString() || "",
+      cor: veiculo.cor || "",
+      km: veiculo.km?.toString() || "",
+      ativo: veiculo.ativo,
+    });
+    setIsEditOpen(true);
+  };
+
+  const handleUpdateVeiculo = async () => {
+    if (!currentVeiculo) return;
+    try {
+      await api.put(`/veiculos/${currentVeiculo.id}`, formData);
+      fetchData();
+      setIsEditOpen(false);
+      resetForm();
+      toast({
+        title: "Sucesso",
+        description: "Veículo atualizado com sucesso!",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Erro",
+        description: error.message || "Erro ao atualizar veículo.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const toggleAtivo = async (veiculo: Veiculo) => {
+    try {
+      await api.put(`/veiculos/${veiculo.id}`, { ...veiculo, ativo: veiculo.ativo === 1 ? 0 : 1 });
+      fetchData();
+      toast({
+        title: "Sucesso",
+        description: `Veículo ${veiculo.ativo === 1 ? 'inativado' : 'ativado'}!`,
+      });
+    } catch (error) {
+      toast({
+        title: "Erro",
+        description: "Erro ao alterar status.",
+        variant: "destructive",
+      });
+    }
+  }
 
   return (
     <MainLayout title="Veículos" subtitle="Gerencie os veículos cadastrados">
@@ -153,7 +214,7 @@ const Veiculos = () => {
             />
           </div>
 
-          <Dialog open={isOpen} onOpenChange={setIsOpen}>
+          <Dialog open={isOpen} onOpenChange={(open) => { setIsOpen(open); if (!open) resetForm(); }}>
             <DialogTrigger asChild>
               <Button>
                 <Plus className="w-4 h-4 mr-2" />
@@ -170,13 +231,8 @@ const Veiculos = () => {
                     <Label htmlFor="placa">Placa *</Label>
                     <Input
                       id="placa"
-                      value={novoVeiculo.placa}
-                      onChange={(e) =>
-                        setNovoVeiculo({
-                          ...novoVeiculo,
-                          placa: e.target.value.toUpperCase(),
-                        })
-                      }
+                      value={formData.placa}
+                      onChange={(e) => setFormData({ ...formData, placa: e.target.value.toUpperCase() })}
                       placeholder="ABC-1234"
                     />
                   </div>
@@ -185,50 +241,48 @@ const Veiculos = () => {
                     <Input
                       id="ano"
                       type="number"
-                      value={novoVeiculo.ano}
-                      onChange={(e) =>
-                        setNovoVeiculo({ ...novoVeiculo, ano: e.target.value })
-                      }
+                      value={formData.ano}
+                      onChange={(e) => setFormData({ ...formData, ano: e.target.value })}
                       placeholder="2024"
                     />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="marca">Marca</Label>
-                    <Input
-                      id="marca"
-                      value={novoVeiculo.marca}
-                      onChange={(e) =>
-                        setNovoVeiculo({ ...novoVeiculo, marca: e.target.value })
-                      }
-                      placeholder="Honda"
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="modelo">Modelo *</Label>
-                    <Input
-                      id="modelo"
-                      value={novoVeiculo.modelo}
-                      onChange={(e) =>
-                        setNovoVeiculo({
-                          ...novoVeiculo,
-                          modelo: e.target.value,
-                        })
-                      }
-                      placeholder="Civic"
-                    />
-                  </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="modelo">Modelo *</Label>
+                  <Select value={formData.idmodelo} onValueChange={(val) => setFormData({ ...formData, idmodelo: val })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o modelo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {modelos.map(m => (
+                        <SelectItem key={m.id} value={m.id.toString()}>{m.modelo} ({m.marca.marca})</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="cliente">Cliente *</Label>
+                  <Select value={formData.idcliente} onValueChange={(val) => setFormData({ ...formData, idcliente: val })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o cliente" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {clientes.map(c => (
+                        <SelectItem key={c.id} value={c.id.toString()}>{c.nome}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
                     <Label htmlFor="cor">Cor</Label>
                     <Input
                       id="cor"
-                      value={novoVeiculo.cor}
-                      onChange={(e) =>
-                        setNovoVeiculo({ ...novoVeiculo, cor: e.target.value })
-                      }
+                      value={formData.cor}
+                      onChange={(e) => setFormData({ ...formData, cor: e.target.value })}
                       placeholder="Prata"
                     />
                   </div>
@@ -237,24 +291,11 @@ const Veiculos = () => {
                     <Input
                       id="km"
                       type="number"
-                      value={novoVeiculo.km}
-                      onChange={(e) =>
-                        setNovoVeiculo({ ...novoVeiculo, km: e.target.value })
-                      }
+                      value={formData.km}
+                      onChange={(e) => setFormData({ ...formData, km: e.target.value })}
                       placeholder="45000"
                     />
                   </div>
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="cliente">Cliente</Label>
-                  <Input
-                    id="cliente"
-                    value={novoVeiculo.cliente}
-                    onChange={(e) =>
-                      setNovoVeiculo({ ...novoVeiculo, cliente: e.target.value })
-                    }
-                    placeholder="Nome do cliente"
-                  />
                 </div>
                 <Button onClick={handleAddVeiculo} className="mt-2">
                   Adicionar Veículo
@@ -262,6 +303,88 @@ const Veiculos = () => {
               </div>
             </DialogContent>
           </Dialog>
+
+          <Dialog open={isEditOpen} onOpenChange={(open) => { setIsEditOpen(open); if (!open) resetForm(); }}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Editar Veículo</DialogTitle>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                {/* Same fields as Add */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="edit-placa">Placa *</Label>
+                    <Input
+                      id="edit-placa"
+                      value={formData.placa}
+                      onChange={(e) => setFormData({ ...formData, placa: e.target.value.toUpperCase() })}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="edit-ano">Ano</Label>
+                    <Input
+                      id="edit-ano"
+                      type="number"
+                      value={formData.ano}
+                      onChange={(e) => setFormData({ ...formData, ano: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-modelo">Modelo *</Label>
+                  <Select value={formData.idmodelo} onValueChange={(val) => setFormData({ ...formData, idmodelo: val })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o modelo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {modelos.map(m => (
+                        <SelectItem key={m.id} value={m.id.toString()}>{m.modelo} ({m.marca.marca})</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-cliente">Cliente *</Label>
+                  <Select value={formData.idcliente} onValueChange={(val) => setFormData({ ...formData, idcliente: val })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o cliente" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {clientes.map(c => (
+                        <SelectItem key={c.id} value={c.id.toString()}>{c.nome}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="edit-cor">Cor</Label>
+                    <Input
+                      id="edit-cor"
+                      value={formData.cor}
+                      onChange={(e) => setFormData({ ...formData, cor: e.target.value })}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="edit-km">Quilometragem</Label>
+                    <Input
+                      id="edit-km"
+                      type="number"
+                      value={formData.km}
+                      onChange={(e) => setFormData({ ...formData, km: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <Button onClick={handleUpdateVeiculo} className="mt-2">
+                  Salvar Alterações
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
         </div>
 
         {/* Table */}
@@ -275,6 +398,7 @@ const Veiculos = () => {
                 <TableHead>Cor</TableHead>
                 <TableHead>Cliente</TableHead>
                 <TableHead>KM</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
@@ -290,9 +414,9 @@ const Veiculos = () => {
                         <Car className="w-5 h-5 text-primary" />
                       </div>
                       <div>
-                        <div className="font-medium">{veiculo.marca}</div>
+                        <div className="font-medium">{veiculo.modelo?.marca?.marca}</div>
                         <div className="text-sm text-muted-foreground">
-                          {veiculo.modelo}
+                          {veiculo.modelo?.modelo}
                         </div>
                       </div>
                     </div>
@@ -312,19 +436,28 @@ const Veiculos = () => {
                   <TableCell>
                     <span className="flex items-center gap-1">
                       <User className="w-3 h-3" />
-                      {veiculo.cliente}
+                      {veiculo.cliente?.nome}
                     </span>
                   </TableCell>
                   <TableCell>
-                    {veiculo.km.toLocaleString("pt-BR")} km
+                    {veiculo.km?.toLocaleString("pt-BR")} km
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={veiculo.ativo === 1 ? "default" : "destructive"}>
+                      {veiculo.ativo === 1 ? "Ativo" : "Inativo"}
+                    </Badge>
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
-                      <Button variant="ghost" size="icon">
+                      <Button variant="ghost" size="icon" onClick={() => handleEditClick(veiculo)}>
                         <Edit className="w-4 h-4" />
                       </Button>
-                      <Button variant="ghost" size="icon">
-                        <Trash2 className="w-4 h-4 text-destructive" />
+                      <Button variant="ghost" size="icon" onClick={() => toggleAtivo(veiculo)}>
+                        {veiculo.ativo === 1 ? (
+                          <Trash2 className="w-4 h-4 text-destructive" />
+                        ) : (
+                          <RefreshCcw className="w-4 h-4 text-green-600" />
+                        )}
                       </Button>
                     </div>
                   </TableCell>

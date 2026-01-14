@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -17,105 +18,163 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Plus, Search, Phone, Mail, Car, Edit, Trash2 } from "lucide-react";
+import { Plus, Search, Phone, Mail, Car, Edit, Trash2, RefreshCcw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { api } from "../Service/api";
+import { formatCPF, formatPhone } from "@/lib/utils";
 
 interface Cliente {
   id: number;
   nome: string;
-  email: string;
-  telefone: string;
+  email: string | null;
+  fone: string | null;
   cpf: string;
-  veiculos: number;
-  ultimoServico: string;
+  ativo: number;
+  veiculos?: number;
+  ultimoServico?: string;
 }
 
-const clientesData: Cliente[] = [
-  {
-    id: 1,
-    nome: "João Silva",
-    email: "joao@email.com",
-    telefone: "(11) 99999-9999",
-    cpf: "123.456.789-00",
-    veiculos: 2,
-    ultimoServico: "15/11/2024",
-  },
-  {
-    id: 2,
-    nome: "Maria Santos",
-    email: "maria@email.com",
-    telefone: "(11) 98888-8888",
-    cpf: "987.654.321-00",
-    veiculos: 1,
-    ultimoServico: "10/11/2024",
-  },
-  {
-    id: 3,
-    nome: "Pedro Oliveira",
-    email: "pedro@email.com",
-    telefone: "(11) 97777-7777",
-    cpf: "456.789.123-00",
-    veiculos: 3,
-    ultimoServico: "08/11/2024",
-  },
-  {
-    id: 4,
-    nome: "Ana Costa",
-    email: "ana@email.com",
-    telefone: "(11) 96666-6666",
-    cpf: "789.123.456-00",
-    veiculos: 1,
-    ultimoServico: "05/11/2024",
-  },
-];
-
 const Clientes = () => {
-  const [clientes, setClientes] = useState<Cliente[]>(clientesData);
+  const [clientes, setClientes] = useState<Cliente[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [isOpen, setIsOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [currentCliente, setCurrentCliente] = useState<Cliente | null>(null);
+  const [clienteToDelete, setClienteToDelete] = useState<Cliente | null>(null);
   const { toast } = useToast();
 
-  const [novoCliente, setNovoCliente] = useState({
+  const [formData, setFormData] = useState({
     nome: "",
     email: "",
-    telefone: "",
+    fone: "",
     cpf: "",
+    ativo: 1,
   });
+
+  const fetchClientes = async () => {
+    try {
+      const data = await api.get("/clientes");
+      setClientes(data);
+    } catch (error) {
+      toast({
+        title: "Erro",
+        description: "Erro ao carregar clientes.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  useEffect(() => {
+    fetchClientes();
+  }, []);
 
   const filteredClientes = clientes.filter(
     (cliente) =>
-      cliente.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      cliente.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      cliente.cpf.includes(searchTerm)
+    (cliente.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (cliente.email && cliente.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (cliente.fone && cliente.fone.includes(searchTerm)) ||
+      cliente.cpf.includes(searchTerm))
   );
 
-  const handleAddCliente = () => {
-    if (!novoCliente.nome || !novoCliente.telefone) {
+  const handleAddCliente = async () => {
+    if (!formData.nome || !formData.cpf) {
       toast({
         title: "Erro",
-        description: "Preencha pelo menos nome e telefone",
+        description: "Nome e CPF são obrigatórios.",
         variant: "destructive",
       });
       return;
     }
 
-    const newCliente: Cliente = {
-      id: clientes.length + 1,
-      ...novoCliente,
-      veiculos: 0,
-      ultimoServico: "-",
-    };
+    try {
+      const newCliente = await api.post("/clientes", formData);
+      setClientes([...clientes, newCliente]);
+      setFormData({ nome: "", email: "", fone: "", cpf: "", ativo: 1 });
+      setIsOpen(false);
+      toast({
+        title: "Cliente adicionado",
+        description: `${newCliente.nome} foi adicionado com sucesso!`,
+      });
+    } catch (error: any) {
+      console.error(error);
+      toast({
+        title: "Erro",
+        description: error.message || "Erro ao adicionar cliente.",
+        variant: "destructive",
+      });
+    }
+  };
 
-    setClientes([...clientes, newCliente]);
-    setNovoCliente({ nome: "", email: "", telefone: "", cpf: "" });
-    setIsOpen(false);
-
-    toast({
-      title: "Cliente adicionado",
-      description: `${newCliente.nome} foi adicionado com sucesso!`,
+  const handleEditClick = (cliente: Cliente) => {
+    setCurrentCliente(cliente);
+    setFormData({
+      nome: cliente.nome,
+      email: cliente.email || "",
+      fone: cliente.fone || "",
+      cpf: cliente.cpf,
+      ativo: cliente.ativo,
     });
+    setIsEditOpen(true);
+  };
+
+  const handleUpdateCliente = async () => {
+    if (!currentCliente) return;
+
+    try {
+      const updatedCliente = await api.put(`/clientes/${currentCliente.id}`, formData);
+      setClientes(clientes.map((c) => (c.id === currentCliente.id ? updatedCliente : c)));
+      setIsEditOpen(false);
+      setCurrentCliente(null);
+      setFormData({ nome: "", email: "", fone: "", cpf: "", ativo: 1 });
+      toast({
+        title: "Cliente atualizado",
+        description: "Dados do cliente atualizados com sucesso!",
+      });
+    } catch (error) {
+      toast({
+        title: "Erro",
+        description: "Erro ao atualizar cliente.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDeleteClick = (cliente: Cliente) => {
+    setClienteToDelete(cliente);
+    setIsDeleteOpen(true);
+  };
+
+  const confirmDeleteCliente = async () => {
+    if (!clienteToDelete) return;
+
+    const newStatus = clienteToDelete.ativo === 1 ? 0 : 1;
+    const actionText = newStatus === 1 ? "restaurado" : "inativado";
+
+    try {
+      // Instead of DELETE, we update the client with the new status
+      const updatedCliente = { ...clienteToDelete, ativo: newStatus };
+      await api.put(`/clientes/${clienteToDelete.id}`, updatedCliente);
+
+      setClientes(clientes.map((c) => c.id === clienteToDelete.id ? { ...c, ativo: newStatus } : c));
+
+      toast({
+        title: `Cliente ${actionText}`,
+        description: `O cliente foi ${actionText} com sucesso.`,
+      });
+      setIsDeleteOpen(false);
+      setClienteToDelete(null);
+    } catch (error) {
+      toast({
+        title: "Erro",
+        description: `Erro ao ${newStatus === 1 ? "restaurar" : "inativar"} cliente.`,
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -135,7 +194,7 @@ const Clientes = () => {
 
           <Dialog open={isOpen} onOpenChange={setIsOpen}>
             <DialogTrigger asChild>
-              <Button>
+              <Button onClick={() => setFormData({ nome: "", email: "", fone: "", cpf: "", ativo: 1 })}>
                 <Plus className="w-4 h-4 mr-2" />
                 Novo Cliente
               </Button>
@@ -149,9 +208,9 @@ const Clientes = () => {
                   <Label htmlFor="nome">Nome *</Label>
                   <Input
                     id="nome"
-                    value={novoCliente.nome}
+                    value={formData.nome}
                     onChange={(e) =>
-                      setNovoCliente({ ...novoCliente, nome: e.target.value })
+                      setFormData({ ...formData, nome: e.target.value })
                     }
                     placeholder="Nome completo"
                   />
@@ -161,42 +220,136 @@ const Clientes = () => {
                   <Input
                     id="email"
                     type="email"
-                    value={novoCliente.email}
+                    value={formData.email}
                     onChange={(e) =>
-                      setNovoCliente({ ...novoCliente, email: e.target.value })
+                      setFormData({ ...formData, email: e.target.value })
                     }
                     placeholder="email@exemplo.com"
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="telefone">Telefone *</Label>
+                  <Label htmlFor="fone">Telefone</Label>
                   <Input
-                    id="telefone"
-                    value={novoCliente.telefone}
+                    id="fone"
+                    value={formData.fone}
                     onChange={(e) =>
-                      setNovoCliente({
-                        ...novoCliente,
-                        telefone: e.target.value,
+                      setFormData({
+                        ...formData,
+                        fone: e.target.value,
                       })
                     }
                     placeholder="(00) 00000-0000"
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="cpf">CPF</Label>
+                  <Label htmlFor="cpf">CPF *</Label>
                   <Input
                     id="cpf"
-                    value={novoCliente.cpf}
+                    value={formData.cpf}
                     onChange={(e) =>
-                      setNovoCliente({ ...novoCliente, cpf: e.target.value })
+                      setFormData({ ...formData, cpf: e.target.value })
                     }
                     placeholder="000.000.000-00"
                   />
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="ativo"
+                    checked={formData.ativo === 1}
+                    onCheckedChange={(checked) => setFormData({ ...formData, ativo: checked ? 1 : 0 })}
+                  />
+                  <Label htmlFor="ativo">Ativo</Label>
                 </div>
                 <Button onClick={handleAddCliente} className="mt-2">
                   Adicionar Cliente
                 </Button>
               </div>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Editar Cliente</DialogTitle>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-nome">Nome *</Label>
+                  <Input
+                    id="edit-nome"
+                    value={formData.nome}
+                    onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
+                    placeholder="Nome completo"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-email">Email</Label>
+                  <Input
+                    id="edit-email"
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    placeholder="email@exemplo.com"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-fone">Telefone</Label>
+                  <Input
+                    id="edit-fone"
+                    value={formData.fone}
+                    onChange={(e) => setFormData({ ...formData, fone: e.target.value })}
+                    placeholder="(00) 00000-0000"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-cpf">CPF *</Label>
+                  <Input
+                    id="edit-cpf"
+                    value={formData.cpf}
+                    onChange={(e) => setFormData({ ...formData, cpf: e.target.value })}
+                    placeholder="000.000.000-00"
+                  />
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="edit-ativo"
+                    checked={formData.ativo === 1}
+                    onCheckedChange={(checked) => setFormData({ ...formData, ativo: checked ? 1 : 0 })}
+                  />
+                  <Label htmlFor="edit-ativo">Ativo</Label>
+                </div>
+                <Button onClick={handleUpdateCliente} className="mt-2">
+                  Salvar Alterações
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle className="text-center">
+                  {clienteToDelete?.ativo === 1 ? "Inativar Cliente" : "Restaurar Cliente"}
+                </DialogTitle>
+                <DialogDescription className="text-center">
+                  Tem certeza que deseja {clienteToDelete?.ativo === 1 ? "inativar" : "restaurar"} o cliente <strong>{clienteToDelete?.nome}</strong>?
+                  <br />
+                  {clienteToDelete?.ativo === 1
+                    ? "O cliente não aparecerá mais como ativo."
+                    : "O cliente voltará a ser exibido como ativo."}
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter className="sm:justify-center gap-2">
+                <Button variant="outline" onClick={() => setIsDeleteOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button
+                  variant={clienteToDelete?.ativo === 1 ? "destructive" : "default"}
+                  onClick={confirmDeleteCliente}
+                >
+                  {clienteToDelete?.ativo === 1 ? "Inativar" : "Restaurar"}
+                </Button>
+              </DialogFooter>
             </DialogContent>
           </Dialog>
         </div>
@@ -207,10 +360,10 @@ const Clientes = () => {
             <TableHeader>
               <TableRow className="bg-secondary/30">
                 <TableHead>Cliente</TableHead>
-                <TableHead>Contato</TableHead>
-                <TableHead>CPF</TableHead>
-                <TableHead className="text-center">Veículos</TableHead>
-                <TableHead>Último Serviço</TableHead>
+                <TableHead>CPF/CNPJ</TableHead>
+                <TableHead>Fone</TableHead>
+                <TableHead>Email</TableHead>
+                <TableHead>Ativo</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
@@ -223,35 +376,37 @@ const Clientes = () => {
                   <TableCell>
                     <div className="font-medium">{cliente.nome}</div>
                   </TableCell>
+                  <TableCell className="font-mono text-sm">
+                    {formatCPF(cliente.cpf)}
+                  </TableCell>
                   <TableCell>
-                    <div className="flex flex-col gap-1">
-                      <span className="flex items-center gap-1 text-sm">
-                        <Phone className="w-3 h-3" />
-                        {cliente.telefone}
-                      </span>
-                      <span className="flex items-center gap-1 text-sm text-muted-foreground">
-                        <Mail className="w-3 h-3" />
-                        {cliente.email}
-                      </span>
+                    <div className="flex items-center gap-1 text-sm">
+                      <Phone className="w-3 h-3" />
+                      {cliente.fone ? formatPhone(cliente.fone) : "-"}
                     </div>
                   </TableCell>
-                  <TableCell className="font-mono text-sm">
-                    {cliente.cpf}
+                  <TableCell>
+                    <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                      <Mail className="w-3 h-3" />
+                      {cliente.email || "-"}
+                    </div>
                   </TableCell>
-                  <TableCell className="text-center">
-                    <Badge variant="secondary" className="gap-1">
-                      <Car className="w-3 h-3" />
-                      {cliente.veiculos}
+                  <TableCell>
+                    <Badge variant={cliente.ativo === 1 ? "default" : "destructive"}>
+                      {cliente.ativo === 1 ? "Ativo" : "Inativo"}
                     </Badge>
                   </TableCell>
-                  <TableCell>{cliente.ultimoServico}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
-                      <Button variant="ghost" size="icon">
+                      <Button variant="ghost" size="icon" onClick={() => handleEditClick(cliente)}>
                         <Edit className="w-4 h-4" />
                       </Button>
-                      <Button variant="ghost" size="icon">
-                        <Trash2 className="w-4 h-4 text-destructive" />
+                      <Button variant="ghost" size="icon" onClick={() => handleDeleteClick(cliente)}>
+                        {cliente.ativo === 1 ? (
+                          <Trash2 className="w-4 h-4 text-destructive" />
+                        ) : (
+                          <RefreshCcw className="w-4 h-4 text-green-600" />
+                        )}
                       </Button>
                     </div>
                   </TableCell>
@@ -261,8 +416,7 @@ const Clientes = () => {
           </Table>
         </div>
       </div>
-    </MainLayout>
+    </MainLayout >
   );
 };
-
 export default Clientes;
